@@ -3,6 +3,7 @@ extern crate sdl2;
 use std::collections::HashSet;
 
 use sdl2::event::Event;
+use sdl2::image::{InitFlag, LoadTexture}; // cargo build --features "image"
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -12,10 +13,11 @@ const MAX_VELOCITY: f64 = 1.0;
 const JUMP_VELOCITY: f64 = -0.6;
 const MOVE_SPEED: f64 = 0.6;
 
-const WIDTH: u32 = 640;
-const HEIGHT: u32 = 480;
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
 
-const PLAYER_SIZE: u32 = 64;
+const PLAYER_WIDTH: u32 = (28.0*2.0) as u32;
+const PLAYER_HEIGHT: u32 = (58.0*2.0) as u32;
 struct Player {
     x: f64,
     y: f64,
@@ -27,6 +29,7 @@ struct Player {
 pub fn main() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
+    let _image_context = sdl2::image::init(InitFlag::PNG | InitFlag::JPG)?;
 
     let window = video_subsystem
         .window("RustGame", WIDTH, HEIGHT)
@@ -35,17 +38,24 @@ pub fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    let mut canvas = window
+        .into_canvas()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let texture_creator = canvas.texture_creator();
+    
+    let player_texture = texture_creator.load_texture_bytes(include_bytes!("../assets/player_oc_do_not_steal.png"))?;
+    let mut facing_right = true;
 
     let timer = sdl_context.timer()?;
 
     // Create a player
     let mut player = Player {
-        x: (WIDTH / 2 - PLAYER_SIZE / 2) as f64,
+        x: (WIDTH / 2 - PLAYER_WIDTH / 2) as f64,
         y: 0.0,
         velocity_x: 0.0,
         velocity_y: 0.0,
-        rect: Rect::new(0, 0, PLAYER_SIZE, PLAYER_SIZE),
+        rect: Rect::new(0, 0, PLAYER_WIDTH, PLAYER_HEIGHT),
     };
 
     let mut event_pump = sdl_context.event_pump()?;
@@ -83,10 +93,12 @@ pub fn main() -> Result<(), String> {
         if keys.contains(&Keycode::Left) {
             player.velocity_x = -MOVE_SPEED * (delta_time) as f64;
             player.x += -MOVE_SPEED * (delta_time) as f64;
+            facing_right = false;
         }
         if keys.contains(&Keycode::Right) {
             player.velocity_x = MOVE_SPEED * (delta_time) as f64;
             player.x += MOVE_SPEED * (delta_time) as f64;
+            facing_right = true;
         }
         if keys.contains(&Keycode::Up) && touching_ground {
             player.velocity_y = JUMP_VELOCITY * (delta_time) as f64;
@@ -105,8 +117,8 @@ pub fn main() -> Result<(), String> {
         player.y = player.y + player.velocity_y * (delta_time as f64);
 
         // Ensure the player stays in bounds
-        if player.y >= (HEIGHT - PLAYER_SIZE) as f64 {
-            player.y = (HEIGHT - PLAYER_SIZE) as f64;
+        if player.y >= (HEIGHT - PLAYER_HEIGHT) as f64 {
+            player.y = (HEIGHT - PLAYER_HEIGHT) as f64;
             player.velocity_y = 0.0;
             touching_ground = true;
         } else {
@@ -114,10 +126,13 @@ pub fn main() -> Result<(), String> {
         }
 
         if player.x >= (WIDTH) as f64 {
-            player.x = -(PLAYER_SIZE as f64);
-        } else if player.x <= -(PLAYER_SIZE as f64) {
+            player.x = -(PLAYER_WIDTH as f64);
+        } else if player.x <= -(PLAYER_WIDTH as f64) {
             player.x = (WIDTH) as f64;
         }
+        
+        player.rect.set_x(player.x.round() as i32);
+        player.rect.set_y(player.y.round() as i32);
 
         print!("\x1B[1;1H");
         println!("== PLAYER ==");
@@ -130,11 +145,16 @@ pub fn main() -> Result<(), String> {
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         canvas.clear();
 
-        // Draw black player
-        player.rect.set_x(player.x.round() as i32);
-        player.rect.set_y(player.y.round() as i32);
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.fill_rect(player.rect).unwrap();
+        // Draw player
+        canvas.copy_ex(
+            &player_texture,
+            None,
+            player.rect,
+            0.0,
+            None,
+            facing_right,
+            false
+        ).unwrap();
 
         canvas.present();
         old_ticks = new_ticks;
