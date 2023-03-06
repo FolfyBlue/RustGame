@@ -7,6 +7,7 @@ use sdl2::image::{InitFlag, LoadTexture}; // cargo build --features "image"
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use sdl2::render::Texture;
 
 const GRAVITY: f64 = 0.001;
 const MAX_VELOCITY: f64 = 1.0;
@@ -18,11 +19,13 @@ const HEIGHT: u32 = 600;
 
 const PLAYER_WIDTH: u32 = (28.0*2.0) as u32;
 const PLAYER_HEIGHT: u32 = (58.0*2.0) as u32;
-struct Player {
+struct Player<'a> {
     x: f64,
     y: f64,
     velocity_x: f64,
     velocity_y: f64,
+    texture: Texture<'a>,
+    facing_right: bool,
     rect: Rect,
 }
 
@@ -43,9 +46,6 @@ pub fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     let texture_creator = canvas.texture_creator();
-    
-    let player_texture = texture_creator.load_texture_bytes(include_bytes!("../assets/player_oc_do_not_steal.png"))?;
-    let mut facing_right = true;
 
     let timer = sdl_context.timer()?;
 
@@ -55,6 +55,8 @@ pub fn main() -> Result<(), String> {
         y: 0.0,
         velocity_x: 0.0,
         velocity_y: 0.0,
+        texture: texture_creator.load_texture_bytes(include_bytes!("../assets/player_oc_do_not_steal.png"))?,
+        facing_right: true,
         rect: Rect::new(0, 0, PLAYER_WIDTH, PLAYER_HEIGHT),
     };
 
@@ -93,12 +95,12 @@ pub fn main() -> Result<(), String> {
         if keys.contains(&Keycode::Left) {
             player.velocity_x = -MOVE_SPEED * (delta_time) as f64;
             player.x += -MOVE_SPEED * (delta_time) as f64;
-            facing_right = false;
+            player.facing_right = false;
         }
         if keys.contains(&Keycode::Right) {
             player.velocity_x = MOVE_SPEED * (delta_time) as f64;
             player.x += MOVE_SPEED * (delta_time) as f64;
-            facing_right = true;
+            player.facing_right = true;
         }
         if keys.contains(&Keycode::Up) && touching_ground {
             player.velocity_y = JUMP_VELOCITY * (delta_time) as f64;
@@ -147,12 +149,12 @@ pub fn main() -> Result<(), String> {
 
         // Draw player
         canvas.copy_ex(
-            &player_texture,
+            &player.texture,
             None,
             player.rect,
             0.0,
             None,
-            facing_right,
+            player.facing_right,
             false
         ).unwrap();
 
