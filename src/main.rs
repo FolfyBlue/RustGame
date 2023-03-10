@@ -9,24 +9,120 @@ use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Texture;
 
-const GRAVITY: f64 = 0.001;
-const MAX_VELOCITY: f64 = 1.0;
-const JUMP_VELOCITY: f64 = -0.6;
-const MOVE_SPEED: f64 = 0.6;
-
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 
-const PLAYER_WIDTH: u32 = (28.0*2.0) as u32;
-const PLAYER_HEIGHT: u32 = (58.0*2.0) as u32;
-struct Player<'a> {
+const PLAYER_WIDTH: u32 = (28.0 * 2.0) as u32;
+const PLAYER_HEIGHT: u32 = (58.0 * 2.0) as u32;
+
+struct Position {
     x: f64,
     y: f64,
-    velocity_x: f64,
-    velocity_y: f64,
-    texture: Texture<'a>,
-    facing_right: bool,
+}
+
+struct GameObject {
+    position: Position,
     rect: Rect,
+}
+
+struct TexturedGameObject<'a> {
+    game_object: GameObject,
+    texture: Texture<'a>,
+    flip_horizontal: bool,
+    flip_vertical: bool,
+    angle: f64,
+}
+struct Entity<'a> {
+    textured_game_object: TexturedGameObject<'a>,
+    velocity: Position,
+    gravity: f64,
+    max_fall_speed: f64,
+    is_touching_ground: bool,
+}
+
+struct Player<'a> {
+    entity: Entity<'a>,
+    movement_speed: f64,
+    jump_speed: f64,
+}
+
+impl Player<'_> {
+    fn jump(&mut self, delta_time: i32) {
+        if self.entity.is_touching_ground {
+            self.entity.velocity.y = -self.jump_speed * (delta_time) as f64;
+        }
+    }
+
+    fn move_left(&mut self, delta_time: i32) {
+        self.entity.velocity.x = -self.movement_speed * (delta_time) as f64;
+        self.entity.textured_game_object.game_object.position.x += -self.movement_speed * (delta_time) as f64;
+        self.entity.textured_game_object.flip_horizontal = false;
+    }
+
+    fn move_right(&mut self, delta_time: i32) {
+        self.entity.velocity.x = self.movement_speed * (delta_time) as f64;
+        self.entity.textured_game_object.game_object.position.x += self.movement_speed * (delta_time) as f64;
+        self.entity.textured_game_object.flip_horizontal = true;
+    }
+
+    fn update(&mut self, delta_time: i32, keys: HashSet<Keycode>) {
+        // Handle movement
+        if keys.contains(&Keycode::Left) {
+            self.move_left(delta_time);
+        }
+        if keys.contains(&Keycode::Right) {
+            self.move_right(delta_time);
+        }
+        if keys.contains(&Keycode::Up) {
+            self.jump(delta_time);
+        }
+
+        // Ensure the player doesn't surpass the maximum fall velocity
+        if self.entity.velocity.y <= self.entity.max_fall_speed {
+            self.entity.velocity.y += self.entity.gravity * (delta_time) as f64;
+        } else {
+            self.entity.velocity.y = self.entity.max_fall_speed;
+        }
+        self.entity.velocity.x = self.entity.velocity.x * (delta_time) as f64;
+
+        // Update the player position according to the given velocity
+        self.entity.textured_game_object.game_object.position.x += self.entity.velocity.x * (delta_time as f64);
+        self.entity.textured_game_object.game_object.position.y += self.entity.velocity.y * (delta_time as f64);
+
+        // Ensure the player stays in bounds
+        if self.entity.textured_game_object.game_object.position.y >= (HEIGHT - PLAYER_HEIGHT) as f64
+        {
+            self.entity.textured_game_object.game_object.position.y = (HEIGHT - PLAYER_HEIGHT) as f64;
+            self.entity.velocity.y = 0.0;
+            self.entity.is_touching_ground = true;
+        } else {
+            self.entity.is_touching_ground = false;
+        }
+
+        if self.entity.textured_game_object.game_object.position.x >= (WIDTH) as f64 {
+            self.entity.textured_game_object.game_object.position.x = -(PLAYER_WIDTH as f64);
+        } else if self.entity.textured_game_object.game_object.position.x <= -(PLAYER_WIDTH as f64)
+        {
+            self.entity.textured_game_object.game_object.position.x = (WIDTH) as f64;
+        }
+
+        self.entity.textured_game_object.game_object.rect.set_x(
+            self.entity
+                .textured_game_object
+                .game_object
+                .position
+                .x
+                .round() as i32,
+        );
+        self.entity.textured_game_object.game_object.rect.set_y(
+            self.entity
+                .textured_game_object
+                .game_object
+                .position
+                .y
+                .round() as i32,
+        );
+    }
 }
 
 pub fn main() -> Result<(), String> {
@@ -41,30 +137,41 @@ pub fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut canvas = window
-        .into_canvas()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
     let texture_creator = canvas.texture_creator();
 
     let timer = sdl_context.timer()?;
 
     // Create a player
+
     let mut player = Player {
-        x: (WIDTH / 2 - PLAYER_WIDTH / 2) as f64,
-        y: 0.0,
-        velocity_x: 0.0,
-        velocity_y: 0.0,
-        texture: texture_creator.load_texture_bytes(include_bytes!("../assets/player_oc_do_not_steal.png"))?,
-        facing_right: true,
-        rect: Rect::new(0, 0, PLAYER_WIDTH, PLAYER_HEIGHT),
+        entity: Entity {
+            textured_game_object: TexturedGameObject {
+                game_object: GameObject {
+                    position: Position {
+                        x: (WIDTH / 2 - PLAYER_WIDTH / 2) as f64,
+                        y: 0.0,
+                    },
+                    rect: Rect::new(0, 0, PLAYER_WIDTH, PLAYER_HEIGHT),
+                },
+                texture: texture_creator
+                    .load_texture_bytes(include_bytes!("../assets/player_oc_do_not_steal.png"))?,
+                flip_horizontal: false,
+                flip_vertical: false,
+                angle: 0.0,
+            },
+            velocity: Position { x: 0.0, y: 0.0 },
+            gravity: 0.001,
+            max_fall_speed: 1.0,
+            is_touching_ground: false,
+        },
+        movement_speed: 0.6,
+        jump_speed: 0.6,
     };
 
     let mut event_pump = sdl_context.event_pump()?;
 
     let mut old_ticks: i32 = 0;
-
-    let mut touching_ground: bool = false;
 
     'running: loop {
         //- VARIABLES
@@ -90,56 +197,19 @@ pub fn main() -> Result<(), String> {
         }
 
         //- GAME LOGIC
-
-        // Handle movement
-        if keys.contains(&Keycode::Left) {
-            player.velocity_x = -MOVE_SPEED * (delta_time) as f64;
-            player.x += -MOVE_SPEED * (delta_time) as f64;
-            player.facing_right = false;
-        }
-        if keys.contains(&Keycode::Right) {
-            player.velocity_x = MOVE_SPEED * (delta_time) as f64;
-            player.x += MOVE_SPEED * (delta_time) as f64;
-            player.facing_right = true;
-        }
-        if keys.contains(&Keycode::Up) && touching_ground {
-            player.velocity_y = JUMP_VELOCITY * (delta_time) as f64;
-        }
-
-        // Ensure the player doesn't surpass the maximum fall velocity
-        if player.velocity_y <= MAX_VELOCITY {
-            player.velocity_y = player.velocity_y + GRAVITY * (delta_time) as f64;
-        } else {
-            player.velocity_y = MAX_VELOCITY;
-        }
-        player.velocity_x = player.velocity_x * (delta_time) as f64;
-
-        // Update the player position according to the given velocity
-        player.x = player.x + player.velocity_x * (delta_time as f64);
-        player.y = player.y + player.velocity_y * (delta_time as f64);
-
-        // Ensure the player stays in bounds
-        if player.y >= (HEIGHT - PLAYER_HEIGHT) as f64 {
-            player.y = (HEIGHT - PLAYER_HEIGHT) as f64;
-            player.velocity_y = 0.0;
-            touching_ground = true;
-        } else {
-            touching_ground = false;
-        }
-
-        if player.x >= (WIDTH) as f64 {
-            player.x = -(PLAYER_WIDTH as f64);
-        } else if player.x <= -(PLAYER_WIDTH as f64) {
-            player.x = (WIDTH) as f64;
-        }
-        
-        player.rect.set_x(player.x.round() as i32);
-        player.rect.set_y(player.y.round() as i32);
+        player.update(delta_time, keys);
 
         print!("\x1B[1;1H");
         println!("== PLAYER ==");
-        println!("Position: {:.2} {:.2}", player.x, player.y);
-        println!("Velocity: {:.2} {:.2}", player.velocity_x, player.velocity_y);
+        println!(
+            "Position: {:.2} {:.2}",
+            player.entity.textured_game_object.game_object.position.x,
+            player.entity.textured_game_object.game_object.position.y
+        );
+        println!(
+            "Velocity: {:.2} {:.2}",
+            player.entity.velocity.x, player.entity.velocity.y
+        );
 
         //- DRAW
 
@@ -148,15 +218,17 @@ pub fn main() -> Result<(), String> {
         canvas.clear();
 
         // Draw player
-        canvas.copy_ex(
-            &player.texture,
-            None,
-            player.rect,
-            0.0,
-            None,
-            player.facing_right,
-            false
-        ).unwrap();
+        canvas
+            .copy_ex(
+                &player.entity.textured_game_object.texture,
+                None,
+                player.entity.textured_game_object.game_object.rect,
+                player.entity.textured_game_object.angle,
+                None,
+                player.entity.textured_game_object.flip_horizontal,
+                player.entity.textured_game_object.flip_vertical,
+            )
+            .unwrap();
 
         canvas.present();
         old_ticks = new_ticks;
